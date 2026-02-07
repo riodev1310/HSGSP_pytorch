@@ -114,7 +114,7 @@ class HybridFrequencyBaseline:
                     train_dataset=train_dl,
                     val_dataset=val_dl,
                     epochs=warmup_epochs,
-                    train_eval_dataset=train_eval_dl,
+                    train_eval_dl=train_eval_dl,
                 )
             freq_reg_config = None
             teacher = None
