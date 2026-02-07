@@ -319,6 +319,7 @@ class FrequencyRelevanceAnalyzer:
                 grad = grads[l_idx]
                 if grad is None:
                     continue
+                grad = grad.cpu()  # Move grad to CPU to match kernel's device
                 kernel = layer.weight.detach().cpu()
                 taylor = torch.abs(kernel * grad).numpy()
                 taylor_dct = self.dct2_ortho(torch.from_numpy(taylor)).numpy()
