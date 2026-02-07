@@ -174,143 +174,55 @@ class PruningStrategy:
                                 model: torch.nn.Module,
                                 pruning_configs: Dict[str, LayerPruningConfig]) -> torch.nn.Module:
         """
-        Apply structured pruning with channel-consistency across layers.
-        - - Prunes Conv2d output channels per configuration.
-        - Propagates the kept-channel mask forward to slice the next Conv2d's
-          input channels accordingly.
-        - Adjusts following BatchNorm parameters.
-        - Adapts Linear input weights when preceded by AdaptiveAvgPool2d
-          (common in this repo's VGG models).
-        Args:
-            model: Original model
-            pruning_configs: Dict layer_name -> LayerPruningConfig (with mask)
-        Returns:
-            A new pruned model with compatible shapes and copied weights.
+        Apply structured pruning in-place with channel-consistency across layers.
         """
-        def clone_layer(layer: nn.Module, name: Optional[str] = None) -> nn.Module:
-            cloned = type(layer)()
-            if name is not None:
-                cloned._name = name
-            return cloned
-        def clone_conv_with_filters(layer: nn.Conv2d, new_filters: int, name: Optional[str] = None) -> nn.Conv2d:
-            cloned = nn.Conv2d(
-                layer.in_channels,
-                new_filters,
-                kernel_size=layer.kernel_size,
-                stride=layer.stride,
-                padding=layer.padding,
-                dilation=layer.dilation,
-                groups=layer.groups,
-                bias=(layer.bias is not None)
-            )
-            if name is not None:
-                cloned._name = name
-            return cloned
-        def clone_bn(layer: nn.BatchNorm2d, name: Optional[str] = None) -> nn.BatchNorm2d:
-            cloned = nn.BatchNorm2d(
-                layer.num_features,
-                eps=layer.eps,
-                momentum=layer.momentum,
-                affine=layer.affine,
-                track_running_stats=layer.track_running_stats
-            )
-            if name is not None:
-                cloned._name = name
-            return cloned
-        def clone_linear(layer: nn.Linear, new_in: int, name: Optional[str] = None) -> nn.Linear:
-            cloned = nn.Linear(new_in, layer.out_features, bias=(layer.bias is not None))
-            if name is not None:
-                cloned._name = name
-            return cloned
-        # Traverse the model to build a new one with pruned layers
-        # We need to keep track of the current input channel mask
-        current_channel_mask: Optional[np.ndarray] = None
-        pruned_model = nn.Sequential()  # Assuming simple sequential for VGG
-        for name, module in model.named_modules():
-            if isinstance(module, nn.Conv2d):
-                cfg = pruning_configs.get(name)
-                # Determine output channel mask for this conv
-                if cfg is not None:
-                    out_mask = cfg.mask.astype(bool)
-                    new_filters = int(np.sum(out_mask))
-                else:
-                    out_mask = None
-                    new_filters = module.out_channels
-                # Create new conv
-                new_conv = clone_conv_with_filters(module, new_filters, name=name)
-                # Slice and set weights
-                W = module.weight.detach().numpy().transpose(2, 3, 1, 0)  # to (H,W,Cin,Cout)
-                b = module.bias.detach().numpy() if module.bias is not None else None
-                kh, kw, Cin, Cout = W.shape
-                # Input slicing if a previous conv pruned its outputs
-                if current_channel_mask is not None:
-                    in_mask = current_channel_mask.astype(bool)
-                    W = W[:, :, in_mask, :]
-                # Output slicing if this conv is pruned
-                if out_mask is not None:
-                    W = W[:, :, :, out_mask]
-                    if b is not None:
-                        b = b[out_mask]
-                # Set weights
-                new_conv.weight.data = torch.from_numpy(W.transpose(3, 2, 0, 1)).to(new_conv.weight.device)
-                if b is not None:
-                    new_conv.bias.data = torch.from_numpy(b).to(new_conv.bias.device)
-                pruned_model.add_module(name, new_conv)
-                # Update the channel mask to this conv's outputs
-                if out_mask is not None:
-                    current_channel_mask = out_mask
-                else:
-                    # No pruning on this layer: outputs are all channels
-                    current_channel_mask = np.ones(new_filters, dtype=bool)
+        modules = dict(model.named_modules())
+        conv_names = [name for name, m in modules.items() if isinstance(m, nn.Conv2d)]
+        previous_conv_name = None
+        for i, name in enumerate(conv_names):
+            layer = modules[name]
+            config = pruning_configs.get(name)
+            if config is None:
+                previous_conv_name = name
                 continue
-            # BatchNorm: slice parameters to match current channel mask
-            if isinstance(module, nn.BatchNorm2d):
-                new_bn = clone_bn(module, name=name)
-                pruned_model.add_module(name, new_bn)
-                # Copy/maybe-slice weights
-                if current_channel_mask is not None:
-                    m = current_channel_mask.astype(bool)
-                    new_bn.weight.data = module.weight.data[m]
-                    new_bn.bias.data = module.bias.data[m]
-                    new_bn.running_mean = module.running_mean[m]
-                    new_bn.running_var = module.running_var[m]
-                else:
-                    new_bn.load_state_dict(module.state_dict())
-                continue
-            # AdaptiveAvgPool2d: preserve mask (channels collapse to features)
-            if isinstance(module, nn.AdaptiveAvgPool2d):
-                new_gap = nn.AdaptiveAvgPool2d(module.output_size)
-                pruned_model.add_module(name, new_gap)
-                # Mask remains over feature channels (length = C)
-                continue
-            # Flatten: if needed, we'd have to expand mask to H*W*C; not used in VGG here
-            if isinstance(module, nn.Flatten):
-                new_flat = nn.Flatten()
-                pruned_model.add_module(name, new_flat)
-                # Cannot reliably expand channel mask without known H,W; drop mask
-                current_channel_mask = None
-                continue
-            # Linear: slice input dimension if we have a channel/feature mask (e.g., after GAP)
-            if isinstance(module, nn.Linear):
-                new_in = module.in_features
-                if current_channel_mask is not None:
-                    new_in = int(np.sum(current_channel_mask))
-                new_linear = clone_linear(module, new_in, name=name)
-                pruned_model.add_module(name, new_linear)
-                W = module.weight.detach().numpy()  # (out, in)
-                b = module.bias.detach().numpy() if module.bias is not None else None
-                if current_channel_mask is not None:
-                    m = current_channel_mask.astype(bool)
-                    W = W[:, m]
-                new_linear.weight.data = torch.from_numpy(W).to(new_linear.weight.device)
-                if b is not None:
-                    new_linear.bias.data = torch.from_numpy(b).to(new_linear.bias.device)
-                # After Linear, no longer track channel mask
-                current_channel_mask = None
-                continue
-            # Layers without weights or unaffected by channel count
-            pruned_model.add_module(name, module)
-        return pruned_model
+            out_mask = torch.from_numpy(config.mask).to(layer.weight.device)
+            keep_out = out_mask.sum().item()
+            # Slice output channels
+            layer.weight = nn.Parameter(layer.weight[out_mask])
+            if layer.bias is not None:
+                layer.bias = nn.Parameter(layer.bias[out_mask])
+            layer.out_channels = keep_out
+            # Slice next BN if exists
+            bn_name = name.replace('conv', 'bn')
+            bn = modules.get(bn_name)
+            if isinstance(bn, nn.BatchNorm2d):
+                bn.weight = nn.Parameter(bn.weight[out_mask])
+                bn.bias = nn.Parameter(bn.bias[out_mask])
+                bn.running_mean = bn.running_mean[out_mask]
+                bn.running_var = bn.running_var[out_mask]
+                bn.num_features = keep_out
+            # Slice input of previous Conv's output if exists
+            if previous_conv_name is not None:
+                prev_config = pruning_configs.get(previous_conv_name)
+                if prev_config is not None:
+                    prev_out_mask = torch.from_numpy(prev_config.mask).to(layer.weight.device)
+                    layer.weight = nn.Parameter(layer.weight[:, prev_out_mask, :, :])
+                    layer.in_channels = prev_out_mask.sum().item()
+            previous_conv_name = name
+        # Adjust classifier input based on last conv's out_channels
+        if conv_names:
+            last_name = conv_names[-1]
+            last_layer = modules[last_name]
+            last_channels = last_layer.out_channels
+            # Assuming classifier.0 is the first Linear
+            first_linear_name = 'classifier.0'
+            first_linear = modules.get(first_linear_name)
+            if isinstance(first_linear, nn.Linear):
+                # Input is last_channels (after avgpool 1x1 and flatten)
+                first_linear.weight = nn.Parameter(first_linear.weight[:, :last_channels])
+                first_linear.in_features = last_channels
+        return model
+   
     def prune_model_structured(self,
                                model: torch.nn.Module,
                                layer_pruning_ratios: Dict[str, float],
@@ -346,7 +258,7 @@ class PruningStrategy:
                 filters_to_keep=keep,
                 pruning_ratio=(num_filters - keep) / max(num_filters, 1),
                 importance_scores=scores,
-                mask=mask,
+                mask=mask
             )
         pruned_model = self.apply_structured_pruning(model, pruning_configs)
         return pruned_model, pruning_configs
