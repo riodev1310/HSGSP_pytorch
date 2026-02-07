@@ -128,7 +128,7 @@ class HybridFrequencyBaseline:
                 epochs=self.config.hybrid_finetune_epochs,
                 learning_rate=self.config.pruned_growth_lr,
                 log_dir_suffix=f"hybrid_iter_{iteration}",
-                train_eval_dataset=train_eval_dl,
+                train_eval_loader=train_eval_dl,
                 # frequency_regularizer_config=freq_reg_config,
                 # teacher_model=teacher,
             )
