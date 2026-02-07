@@ -63,14 +63,26 @@ class HSGSP_DataLoader:
             test_dl: test dataloader without augmentation
             train_eval_dl: clean view of the training set (no augmentation) for evaluation
         """
-        base_transform = transforms.ToTensor()  # Converts to [0, 1]
+        # base_transform = transforms.ToTensor()  # Converts to [0, 1]
 
+        # augment_transform = transforms.Compose([
+        #     transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+        #     transforms.RandomHorizontalFlip(),
+        #     transforms.ColorJitter(brightness=0.15, contrast=0.2, saturation=0.2),
+        #     transforms.RandomErasing(p=0.5, scale=(0.0625, 0.25), ratio=(1.0, 1.0), value=0.0),
+        # ]) if self.config.data_augmentation else base_transform
+        
         augment_transform = transforms.Compose([
-            transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+            # PIL-compatible transforms first (e.g., crops, flips, jitter if used)
+            transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(brightness=0.15, contrast=0.2, saturation=0.2),
-            transforms.RandomErasing(p=0.5, scale=(0.0625, 0.25), ratio=(1.0, 1.0), value=0.0),
-        ]) if self.config.data_augmentation else base_transform
+            transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),  # If using ColorJitter
+            # Convert to tensor
+            transforms.ToTensor(),
+            # Tensor-only transforms after
+            transforms.RandomErasing(p=0.5),  # Move this after ToTensor
+            transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010]),  # CIFAR-10 means/std; adjust for CIFAR-100 if needed
+        ])
 
         # Load full train dataset with no transform to get consistent split
         full_train = datasets.CIFAR10(root=self.root, train=True, download=True, transform=None)
