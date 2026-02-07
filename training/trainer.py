@@ -254,8 +254,12 @@ class HSGSPTrainer:
 
                 train_loss += loss.item()
                 _, predicted = outputs.max(1)
-                total += batch_y.size(0)
-                train_correct += predicted.eq(batch_y).sum().item()
+                if batch_y.dim() > 1:
+                    batch_y_acc = batch_y.argmax(dim=1)
+                else:
+                    batch_y_acc = batch_y
+                total += batch_y_acc.size(0)
+                train_correct += predicted.eq(batch_y_acc).sum().item()
 
             train_loss /= len(train_loader)
             train_acc = train_correct / total
@@ -343,8 +347,12 @@ class HSGSPTrainer:
                 outputs = model(batch_x)
                 loss += loss_fn(outputs, batch_y).item()
                 _, predicted = outputs.max(1)
-                total += batch_y.size(0)
-                correct += predicted.eq(batch_y).sum().item()
+                if batch_y.dim() > 1:
+                    batch_y_acc = batch_y.argmax(dim=1)
+                else:
+                    batch_y_acc = batch_y
+                total += batch_y_acc.size(0)
+                correct += predicted.eq(batch_y_acc).sum().item()
         return loss / len(loader), correct / total
 
     def _save_model(self, model: nn.Module, filename: str):
@@ -591,8 +599,12 @@ class HSGSPTrainer:
             optimizer.step()
             train_loss += loss.item()
             _, predicted = outputs.max(1)
-            total += batch_y.size(0)
-            train_correct += predicted.eq(batch_y).sum().item()
+            if batch_y.dim() > 1:
+                batch_y_acc = batch_y.argmax(dim=1)
+            else:
+                batch_y_acc = batch_y
+            total += batch_y_acc.size(0)
+            train_correct += predicted.eq(batch_y_acc).sum().item()
         return train_loss / len(loader), train_correct / total
 
     def _train_epoch_distill(self, distiller, loader: DataLoader, optimizer: optim.Optimizer, student_loss_fn: nn.Module, distill_loss_fn: nn.Module, device: torch.device, alpha: float, temperature: float) -> Tuple[float, float]:
@@ -611,8 +623,12 @@ class HSGSPTrainer:
             train_loss += combined_loss.item()
             student_outputs = distiller.student(batch_x)  # Assume
             _, predicted = student_outputs.max(1)
-            total += batch_y.size(0)
-            train_correct += predicted.eq(batch_y).sum().item()
+            if batch_y.dim() > 1:
+                batch_y_acc = batch_y.argmax(dim=1)
+            else:
+                batch_y_acc = batch_y
+            total += batch_y_acc.size(0)
+            train_correct += predicted.eq(batch_y_acc).sum().item()
         return train_loss / len(loader), train_correct / total
 
     def simple_finetune(
