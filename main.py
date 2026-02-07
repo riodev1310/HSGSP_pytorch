@@ -88,10 +88,10 @@ def main(args):
         activation_source = train_clean_loader or train_loader or val_loader
         pruned_model, hybrid_history = hybrid_baseline.run_pipeline(
             model=model,
-            train_ds=train_loader,
-            val_ds=val_loader,
-            train_eval_ds=train_clean_loader,
-            activation_ds=activation_source,
+            train_dl=train_loader,
+            val_dl=val_loader,
+            train_eval_dl=train_clean_loader,
+            activation_dl=activation_source,
         )
         model = pruned_model
         for record in hybrid_history or []:
