@@ -172,6 +172,7 @@ class HSGSPTrainer:
                     self.dim = dim
 
                 def forward(self, pred, target):
+                    target = target.long()  # Cast to long
                     pred = pred.log_softmax(dim=self.dim)
                     with torch.no_grad():
                         true_dist = torch.zeros_like(pred)
