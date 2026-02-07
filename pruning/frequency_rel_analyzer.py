@@ -321,7 +321,7 @@ class FrequencyRelevanceAnalyzer:
                     continue
                 grad = grad.cpu()  # Move grad to CPU to match kernel's device
                 kernel = layer.weight.detach().cpu()
-                taylor = torch.abs(kernel * grad).numpy()
+                taylor = torch.abs(kernel * grad).permute(2, 3, 1, 0).numpy()
                 taylor_dct = self.dct2_ortho(torch.from_numpy(taylor)).numpy()
                 for band, mask in layer_masks[layer_id].items():
                     coeffs = taylor_dct * mask
