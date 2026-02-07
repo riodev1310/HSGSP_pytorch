@@ -17,7 +17,7 @@ random.seed(SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
-class DataLoader:
+class HSGSP_DataLoader:
     """Unified dataset loader for HSGSP project"""
     def __init__(self, config):
         self.config = config
