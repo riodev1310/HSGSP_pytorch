@@ -63,7 +63,7 @@ class HSGSP_DataLoader:
             test_dl: test dataloader without augmentation
             train_eval_dl: clean view of the training set (no augmentation) for evaluation
         """
-        # base_transform = transforms.ToTensor()  # Converts to [0, 1]
+        base_transform = transforms.ToTensor()  # Converts to [0, 1]
 
         # augment_transform = transforms.Compose([
         #     transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
