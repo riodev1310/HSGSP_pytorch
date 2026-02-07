@@ -172,12 +172,11 @@ class HSGSPTrainer:
                     self.dim = dim
 
                 def forward(self, pred, target):
-                    target = target.long()  # Cast to long
                     pred = pred.log_softmax(dim=self.dim)
                     with torch.no_grad():
                         true_dist = torch.zeros_like(pred)
                         true_dist.fill_(self.smoothing / (pred.size(self.dim) - 1))
-                        true_dist.scatter_(1, target.data.unsqueeze(1), self.confidence)
+                        true_dist.scatter_(1, target.view(-1).long().unsqueeze(1), self.confidence)
                     return torch.mean(torch.sum(-true_dist * pred, dim=self.dim))
 
             loss_fn = LabelSmoothingLoss(smoothing=self.config.label_smoothing)
